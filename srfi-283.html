@@ -68,7 +68,7 @@ SPDX-License-Identifier: MIT
   It provides several useful procedures deriving types / checks for arbitrary data.
   <a href="#spec--check--procedure">procedure-check-of</a> and <a href="#spec--check--value">check-of</a> work with checks, as in SRFI 253.
   <a href="#spec--type--procedure">procedure-type-of</a> and <a href="#spec--type--value">type-of</a> work with implementation-specific types.
-  <a href="#spec--util--type-to-check">type-&gt;check</a> allows to turn implementation-specific types into portable checks,
+  <a href="#spec--util--type-to-check">type-&gt;check</a> allows one to turn implementation-specific types into portable checks,
   while <a href="#spec--util--check-to-sexp">check-&gt;sexp</a> provides a way to serialize opaque checks into more readable s-expressions.
 </p>
 
@@ -234,7 +234,7 @@ and allows peeking behind the implementation scaffolds for types.
 
 <p>
   Types are inherently implementation-specific objects and thus have little introspection potential.
-  <a href="#spec--util--type-to-check">type-&gt;check</a> allows to turn them into more portable and manipulable checks.
+  <a href="#spec--util--type-to-check">type-&gt;check</a> allows one to turn them into more portable and manipulable checks.
 </p>
 
 <pre>
