@@ -48,11 +48,12 @@ SPDX-License-Identifier: MIT
       <li> <a href="#spec--type">Type-level API</a>
         <ul>
           <li> <a href="#spec--type--procedure">procedure-type-of proc</a>
-          <li> <a href="#spec--type--value">type-of proc</a>
+          <li> <a href="#spec--type--value">type-of obj</a>
         </ul>
       <li> <a href="#spec--util">Utilities</a>
         <ul>
           <li> <a href="#spec--util--check-to-sexp">check-&gt;sexp proc</a>
+          <li> <a href="#spec--util--type-to-check">type-&gt;check proc</a>
         </ul>
     </ul>
     <li> <a href="#implementation">Implementation</a>
@@ -67,7 +68,8 @@ SPDX-License-Identifier: MIT
   It provides several useful procedures deriving types / checks for arbitrary data.
   <a href="#spec--check--procedure">procedure-check-of</a> and <a href="#spec--check--value">check-of</a> work with checks, as in SRFI 253.
   <a href="#spec--type--procedure">procedure-type-of</a> and <a href="#spec--type--value">type-of</a> work with implementation-specific types.
-  <a href="#spec--util--check-to-sexp">check-&gt;sexp</a> provides a way to serialize opaque checks from above into more readable s-expressions.
+  <a href="#spec--util--type-to-check">type-&gt;check</a> allows to turn implementation-specific types into portable checks,
+  while <a href="#spec--util--check-to-sexp">check-&gt;sexp</a> provides a way to serialize opaque checks into more readable s-expressions.
 </p>
 
 <h2 id="issues">Issues</h2>
@@ -79,17 +81,19 @@ SPDX-License-Identifier: MIT
 <h2 id="rationale">Rationale</h2>
 
 <p>
-  Types / checks / contracts / assertions are useful.
-  (The claim is debatable.)
-  They might help ensure program correctness and prevent basic programming errors.
-  But yet another function of these is explanatory.
-  They help in setting the expectations, e.g., for what the procedure accepts and what it returns.
-  Or understanding what the implementation-specific effective type for a value is.
-  Having a way to infer / deduce / fetch types et al. for a procedure or a value is an important introspection mechanism.
-  Thus this SRFI:
-  to augment the declarative side of <a href="https://srfi.schemers.org/srfi-253/srfi-253.html">SRFI 253</a> and <a href="https://srfi.schemers.org/srfi-273/srfi-273.html">SRFI 273</a>
-  with more explanatory power,
-  and to allow peeking behind the implementation scaffolds for types.
+  Introspection of requirements for procedure arguments and guarantees of
+  return types enables programming support like as-you-type validity
+  checks.
+  They help in setting the expectations, e.g., for what the
+  procedure accepts and what it returns.
+  Or understanding the implementation-specific effective type for a value.
+</p>
+
+<p>
+This SRFI provides a way to fetch types et al. for procedures and values.
+It augments the declarative side of <a href="https://srfi.schemers.org/srfi-253/srfi-253.html">SRFI 253</a>
+and <a href="https://srfi.schemers.org/srfi-273/srfi-273.html">SRFI 273</a> with more explanatory power,
+and allows peeking behind the implementation scaffolds for types.
 </p>
 
 <p>
@@ -107,6 +111,15 @@ SPDX-License-Identifier: MIT
   while type level is based on an (inherently) implementation-specific notion of types,
   whatever they might mean.
 </p>
+
+<div class=note>
+  <p>
+    Notation used in procedure signatures needs an extra explanation.
+    Square brackets (<code>[]</code>) denote a list of values of certain type, like in Haskell.
+    While vertical bar (<code>|</code>) denotes a union type.
+    So something like <code>[pair | integer | #f]</code> means “a list of either pairs, integers, or false.”
+  </p>
+</div>
 
 <h3 id="spec--check">Check-level API <a href="#spec--check">#</a></h3>
 
@@ -137,7 +150,7 @@ SPDX-License-Identifier: MIT
     <a href="#spec--util--check-to-sexp">check-&gt;sexp</a> procedure to turn checks into parseable s-expressions.
 </div>
 
-<h4 id=spec--check--procedure>(srfi 283) procedure-check-of proc ⟹ #f | [procedure | #f], #f | [procedure | #f] <a href="#spec--check--procedure">#</a></h4>
+<h4 id=spec--check--procedure>(srfi 283) procedure-check-of proc ⟹ pair | procedure | #f, [procedure | #f] | #f <a href="#spec--check--procedure">#</a></h4>
 
 <p>
   Procedure check introspection API.
@@ -152,17 +165,10 @@ SPDX-License-Identifier: MIT
     These checks (whenever non-false) must return a true value when applied to a respective argument that the <var>proc</var> may accept.
     Otherwise, it is an error, as per SRFI 253.
     <ul>
-      <li>The list of checks cannot be dotted.
-        Even if the introspected procedure has a rest argument.
-        This is due to the nature of SRFI-253/273-made checks—they cannot be attached to rest arguments.
-        Even on implementations that support rest arguments in <code>*-checked</code> macros.
-        <ul>
-          <li> This in particular might mean that procedures defined with <code>case-lambda(-checked)</code> only get checks for the required arguments.
-            But this glaring under-design of this SRFI is offset by the fact that multiple-arity procedures are problematic in many ways when it comes to checks.
-        </ul>
+      <li> The list of checks can be dotted, with dotted tail providing the check that <strong>every</strong> optional arguments must satisfy.
+      <li> A single procedure can be returned instead of the list of checks, in case the <var>proc</var> only accepts a typed rest argument.
     </ul>
-  <li> The second value is a list of checks (procedures), one per returned value of the procedure.
-  <li> Either of these value checks may be <code>#f</code> for unknown check value or values for which the check cannot be otherwise introspected.
+  <li> The second value is a list of checks (procedures), one per returned value of the procedure. Any of these return checks may be <code>#f</code>.
 </ul>
 
 <p>
@@ -172,10 +178,12 @@ SPDX-License-Identifier: MIT
 </p>
 
 <div class=note>
-    Rationale: this procedure is needed because it is necessary to get checks for both arguments and return values.
-    Fitting all of these into a single returned procedure is nigh impossible.
+  <p>
+    Rationale: this procedure is needed to get checks for both arguments and return values.
+    Fitting all of these into a single returned check is nigh impossible.
     Earlier drafts of SRFI-273 included such a procedure / syntax, <code>check-procedure-of?</code>, but it was removed for reasons.
     Thus this particular operation and its return values.
+  </p>
 </div>
 
 <pre>
@@ -183,23 +191,20 @@ SPDX-License-Identifier: MIT
 ;; =&gt; (#f) ;; No check due to “any” type
 ;; =&gt; (<a href="https://standards.scheme.org/r7rs-html5/index.html#boolean?">#&lt;procedure boolean?&gt;</a>)
 (procedure-check-of <a href="https://standards.scheme.org/r7rs-html5/index.html#map">map</a>)
-;; Notice the lack of optional arguments checks
-;; =&gt; (#&lt;procedure procedure?&gt; <a href="https://standards.scheme.org/r7rs-html5/index.html#list?">#&lt;procedure list?&gt;</a>)
+;; =&gt; (#&lt;procedure procedure?&gt; <a href="https://standards.scheme.org/r7rs-html5/index.html#list?">#&lt;procedure list?&gt;</a> . #&lt;procedure list?&gt;)
 ;; =&gt; (#&lt;procedure list?&gt;)
 (procedure-check-of <a href="https://standards.scheme.org/r7rs-html5/index.html#+">+</a>)
-;; =&gt; () ;; + has no required arguments
-;; =&gt; (<a href="https://standards.scheme.org/r7rs-html5/index.html#number?">#&lt;procedure number?&gt;</a>)
+;; =&gt; <a href="https://standards.scheme.org/r7rs-html5/index.html#number?">#&lt;procedure number?&gt;</a> ;; Rest argument only
+;; =&gt; (#&lt;procedure number?&gt;)
 (procedure-check-of procedure-check-of)
 ;; =&gt; (#&lt;procedure procedure?&gt;)
-;; =&gt; (#&lt;procedure (<a href="https://srfi.schemers.org/srfi-235/srfi-235.html#specification:~:text=%28%28-,disjoin%20predicate%20%2E%2E%2E,-%29%20arg%20%2E%2E%2E%29">disjoin</a> list? boolean?)&gt; #&lt;procedure (disjoin list? boolean?)&gt;)
+;; =&gt; (#&lt;procedure (<a href="https://srfi.schemers.org/srfi-235/srfi-235.html#specification:~:text=%28%28-,disjoin%20predicate%20%2E%2E%2E,-%29%20arg%20%2E%2E%2E%29">disjoin</a> pair? procedure? boolean?)&gt; #&lt;procedure (disjoin list? boolean?)&gt;)
 </pre>
 
 <h4 id=spec--check--value>(srfi 283) check-of obj ⟹ procedure | #f <a href="#spec--check--value">#</a></h4>
 
 <p>
-  Returns the most exact check matching the value, as a procedure that this value must satisfy.
-  Interpretation of “the most exact check” is left to the implementor.
-  (It might overlap with <a href="https://www.lispworks.com/documentation/HyperSpec/Body/26_glo_a.htm#actual_array_element_type">Common Lisp’s concept of “actual type”</a>.)
+  Returns the check matching the <var>obj</var>, as a procedure that this <var>obj</var> must satisfy.
   The implementation can also return <code>#f</code> in case the check cannot be introspected &mdash;
   or at any time really.
 </p>
@@ -215,21 +220,38 @@ SPDX-License-Identifier: MIT
 
 <p>
   While checks might be a useful and portable way to reason about values,
-  a more concrete and close-to-the-metal / implementation-specific introspection might be needed.
+  a more concrete / close-to-the-metal / flexible / implementation-specific introspection might be needed.
   Like… types.
   This section details on the forms working with types instead of checks.
 </p>
 
-<h4 id=spec--type--procedure>(srfi 283) procedure-type-of proc ⟹ implementation-specific <a href="#spec--type--procedure">#</a></h4>
+<h4 id=spec--type--procedure>(srfi 283) procedure-type-of proc ⟹ pair | implementation-specific | #f, [implementation-specific | #f] | #f <a href="#spec--type--procedure">#</a></h4>
 
 <p>
-  Returns an implementation-specific number of implementation-specific values characterizing the given procedure.
-  It is recommended to follow the format of
-  <a href="#spec--check--procedure">procedure-check-of</a>—two pairs / booleans of types.
-  Unlike <code>procedure-check-of</code>, returning a dotted list for arguments is possible,
-  as some implementations type the rest argument too.
-  Returning a single type object for procedures (like <code>+</code>) that accept a single rest argument is possible, too.
+  Returns a <a href="#spec--check--procedure">procedure-check-of</a>-like values—two pairs / booleans of types.
+  Returning a single type object as first value for procedures (like <code>+</code>) that accept a single rest argument is possible, too.
 </p>
+
+<p>
+  Types are inherently implementation-specific objects and thus have little introspection potential.
+  <a href="#spec--util--type-to-check">type-&gt;check</a> allows to turn them into more portable and manipulable checks.
+</p>
+
+<pre>
+;; Using Chibi Scheme syntax
+(procedure-type-of +)
+;; =&gt; #&lt;type "Number"&gt;
+;; =&gt; (#&lt;type "Number"&gt;)
+(procedure-type-of vector-ref)
+;; =&gt; (#&lt;type "Vector"&gt; #&lt;type "Integer"&gt;)
+;; =&gt; (#f)
+(procedure-type-of substring)
+;; =&gt; (#&lt;type "String"&gt; #&lt;type "Integer"&gt; . #&lt;type "Integer"&gt;)
+;; =&gt; (#&lt;type "String"&gt;)
+(procedure-type-of procedure-type-of)
+;; =&gt; (#&lt;type "Procedure"&gt;)
+;; =&gt; (#f)
+</pre>
 
 <h4 id=spec--type--value>(srfi 283) type-of obj ⟹ implementation-specific <a href="#spec--type--value">#</a></h4>
 
@@ -238,7 +260,22 @@ SPDX-License-Identifier: MIT
   This is included by some implementations already.
 </p>
 
+<pre>
+;; Examples from Chibi Scheme
+(type-of 3)
+;; =&gt; #&lt;type "Integer"&gt;
+(type-of vector-copy!)
+;; =&gt; #&lt;type "Procedure"&gt;
+</pre>
+
 <h3 id=spec--util>Utilities <a href="#spec--util">#</a></h3>
+
+<p>
+  Neither checks nor types are particularly easy to work with.
+  They need some support to be introspectable and readable.
+  Thus these utilities.
+</p>
+
 <h4 id=spec--util--check-to-sexp>(srfi 283) check-&gt;sexp proc ⟹ list | symbol | #f <a href="#spec--util--check-to-sexp">#</a></h4>
 
 <p>
@@ -253,6 +290,25 @@ SPDX-License-Identifier: MIT
   into a symbol (in case of simple predicates, like <code>integer?</code>),
   list (for more complex ones, like <code>(cut eqv? &lt;> 3)</code>),
   or returns <code>#f</code> (in case the conversion is unsuccessful).
+</p>
+
+<pre>
+(check-&gt;sexp procedure?)
+;; =&gt; procedure? ;; Symbol
+(check-&gt;sexp (disjoin procedure? integer?))
+;; =&gt; (disjoin procedure? integer?) ;; S-expression
+(check-&gt;sexp some-unknown-or-non-inspectable-check)
+;; =&gt; #f
+</pre>
+
+<h4 id=spec--util--type-to-check>(srfi 283) type-&gt;check type ⟹ procedure | #f <a href="#spec--util--type-to-check">#</a></h4>
+
+<p>
+  As implementation-specific types are inherently… implementation-specific,
+  one needs a way to portably handle them.
+  Converting these to checks is the easiest way to do so.
+  <code>type-&gt;check</code> does exactly that—it takes an implementation-specific <var>type</var> object and returns a check matching it.
+  Or <code>#f</code> in case this check cannot be inferred for some reason.
 </p>
 
 <h4 id=spec--util--symbol>Symbol Type Introspection</h4>
@@ -279,6 +335,13 @@ SPDX-License-Identifier: MIT
 
 <p>
   Thanks to Peter McGoron for the discussion of an earlier design of this SRFI, then part of SRFI 273.
+  Also thanks to him for suggestions on more detailed types from <code>procedure-type-of</code> and <code>type-&gt;check</code>.
+</p>
+
+<p>
+  Thanks to Arne Babenhauserheide for a splendid revision of the Rationale section.
+  And for creating <a href="https://srfi.schemers.org/srfi-284/srfi-284.html">SRFI-284: define-typed</a>
+  with an explicit goal of supporting SRFI 283.
 </p>
 
 <p>
