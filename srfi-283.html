@@ -16,6 +16,7 @@ SPDX-License-Identifier: MIT
           border: 0.1em solid var(--fg);
           border-radius: 0.2em;
           padding: 1em;
+          margin: 1em 0em;
       }
     </style>
   </head>
@@ -39,7 +40,7 @@ SPDX-License-Identifier: MIT
 
 <p>
   This SRFI focuses on the introspection and type inference sides of typing / checking.
-  It provides several useful procedures deriving types / checks for arbitrary data.
+  It provides procedures deriving types / checks for arbitrary data.
   <a href="#spec--check--procedure">procedure-checks-of</a> and <a href="#spec--check--value">check-of</a> work with checks, as in SRFI 253.
   <a href="#spec--type--procedure">procedure-types-of</a> and <a href="#spec--type--value">type-of</a> work with implementation-specific types.
   <a href="#spec--util--type-to-check">type-&gt;check</a> allows to turn implementation-specific types into portable checks,
@@ -162,21 +163,21 @@ and allows peeking behind the implementation scaffolds for types.
 
 <pre>
 &lt;signatures&gt; :
-   #f                         ;; Signatures unknown
+   #f                          ;; Signatures unknown
    | ((&lt;args&gt; &lt;returns&gt;) ...)
 
 &lt;args&gt; :
-   &lt;check&gt;                    ;; Single rest argument
-   | (&lt;check&gt; ...)            ;; Non-variadic signature
-   | (&lt;check&gt; ... . &lt;check&gt;)  ;; Variadic / dotted / rest signature
+   &lt;check&gt;                     ;; Single rest argument
+   | (&lt;check&gt; ...)             ;; Non-variadic signature
+   | (&lt;check&gt; ... . &lt;check&gt;)   ;; Variadic / dotted / rest signature
 
 &lt;returns&gt; :
-   #f
-   | (&lt;check&gt; ...)
+   #f                          ;; The number and format of return values is unknown
+   | (&lt;check&gt; ...)             ;; Exact number of return values conforming to provided checks
 
 &lt;check&gt; :
-   #f                         ;; Any value
-   | &lt;procedure&gt;              ;; Value conforming to the procedure check, as per SRFI 253
+   #f                          ;; Any value
+   | &lt;procedure&gt;               ;; Value conforming to the procedure check, as per SRFI 253
 </pre>
 
 <p>
@@ -209,11 +210,15 @@ and allows peeking behind the implementation scaffolds for types.
 ;; =&gt; ([<a href="https://standards.scheme.org/r7rs-html5/index.html#number?">#&lt;procedure number?&gt;</a> (#&lt;procedure number?&gt;)])
 (procedure-checks-of <a href="https://standards.scheme.org/r7rs-html5/index.html#truncate/">truncate/</a>)
 ;; =&gt; ([(<a href="https://standards.scheme.org/r7rs-html5/index.html#integer?">#&lt;procedure integer?&gt;</a> #&lt;procedure integer?&gt;) (#&lt;procedure integer?&gt; #&lt;procedure integer?&gt;)])
-(procedure-checks-of <a href="https://standards.scheme.org/r7rs-html5/index.html#vector-copy">vector-copy</a> (#&lt;procedure vector?&gt;))
+(procedure-checks-of <a href="https://standards.scheme.org/r7rs-html5/index.html#vector-copy">vector-copy</a>)
 ;; =&gt; ([(<a href="https://standards.scheme.org/r7rs-html5/index.html#vector?">#&lt;procedure vector?&gt;</a>) (#&lt;procedure vector?&gt;)]
        [(#&lt;procedure vector?&gt; #&lt;procedure integer?&gt;) (#&lt;procedure vector?&gt;)]
        [(#&lt;procedure vector?&gt; #&lt;procedure integer?&gt; #&lt;procedure integer?&gt;) (#&lt;procedure vector?&gt;)])
-(procedure-checks-of procedure-check-of)
+;; or, depending on what vector-copy compiles to:
+;; =&gt; ([(#&lt;procedure vector?&gt; . #&lt;procedure integer?&gt;) (#&lt;procedure vector?&gt;)])
+;; or even:
+;; =&gt; ([(#&lt;procedure vector?&gt; . #f) (#&lt;procedure vector?&gt;)])
+(procedure-checks-of procedure-checks-of)
 ;; =&gt; ([(#&lt;procedure procedure?&gt;) (#&lt;procedure (<a href="https://srfi.schemers.org/srfi-235/srfi-235.html#specification:~:text=%28%28-,disjoin%20predicate%20%2E%2E%2E,-%29%20arg%20%2E%2E%2E%29">disjoin</a> boolean? pair?)&gt;)])
 </pre>
 
@@ -239,6 +244,15 @@ and allows peeking behind the implementation scaffolds for types.
 <p>
   While intimidating, it’s unlikely to ever reach this level of complexity
   as most callers will only be interested in a subset of the returned signatures.
+</p>
+</div>
+
+<div class=note>
+<p>
+  Note also that
+  the argument signature for a variadic-only procedure with unknown variadic type
+  and the signature for a procedure with unknown arguments and their types are the same—<code>#f</code>.
+  This is a corner case that’s too rare, inconsequential, and complicated to be handled in this SRFI.
 </p>
 </div>
 
@@ -344,7 +358,7 @@ and allows peeking behind the implementation scaffolds for types.
 <h4 id=spec--util--type-to-check>(srfi 283) type-&gt;check type ⟹ procedure | #f <a href="#spec--util--type-to-check">#</a></h4>
 
 <p>
-  As implementation-specific types are inherently… implementation-specific,
+  Implementation-specific types are inherently… implementation-specific,
   so one needs a way to portably handle them.
   Converting these to checks is the easiest way to do so.
   <code>type-&gt;check</code> does exactly that—it takes an implementation-specific <var>type</var> object and returns a check matching it.
@@ -375,9 +389,8 @@ and allows peeking behind the implementation scaffolds for types.
 
 <p>
   Early drafts of this SRFI included <code>symbol-check-of</code> and <code>symbol-type-of</code> procedures.
-  The check / type metadata was attached to the symbol.
   These were supposed to be useful in case the domain of the symbol was wider than the domain of the value currently bound to it,
-  say with a symbol restricted to reals, while its value is an exact integer.
+  say with a symbol restricted to reals, while its value was an exact integer.
   Both procedures were removed because interpretation of a symbol involves questions of environment management and evaluation.
   These are too expansive for a simple SRFI like this one, thus the removal.
 </p>
@@ -389,7 +402,10 @@ and allows peeking behind the implementation scaffolds for types.
 
 <h2 id="implementation">Implementation</h2>
 
-<p>There is not yet a sample implementation.</p>
+<p>
+  You can find a sample implementation (for Chibi Scheme and Teeny Scheme) in
+  <a href="https://github.com/scheme-requests-for-implementation/srfi-283">this SRFI’s repository</a>.
+</p>
 
 <h2 id="acknowledgements">Acknowledgements</h2>
 
